@@ -46,7 +46,7 @@ func receive(shutdown chan struct{}) {
 			if err != nil {
 				log.Printf("[R] Task failed: %v", err)
 			} else {
-				log.Printf("[F] Done.")
+				log.Printf("[R] Done.")
 			}
 		case <-shutdown:
 			log.Printf("[R] Stopping; waiting for the last task...")
