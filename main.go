@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
-	"net"
 	"os"
 	"os/signal"
 	"sync"
@@ -25,68 +24,61 @@ func (e *myError) Temporary() bool {
 	return false
 }
 
-func doSomeTask(errChan chan net.Error) {
+func doSomeTask() error {
 	const maximum = 2000 * time.Millisecond
 
 	n := time.Duration(rand.Intn(3000))
 	if n < maximum {
 		time.Sleep(n * time.Millisecond)
-		errChan <- nil
-	} else {
-		time.Sleep(maximum * time.Millisecond)
-		errChan <- &myError{
-			error:     fmt.Errorf("Operation timed out"),
-			isTimeout: true,
-		}
+		return nil
+	}
+	time.Sleep(maximum * time.Millisecond)
+	return &myError{
+		error:     fmt.Errorf("Operation timed out"),
+		isTimeout: true,
 	}
 }
 
 func receive(shutdown chan struct{}) {
-
-SERVICE_LOOP:
+	errChan := make(chan error)
 	for {
-		errChan := make(chan net.Error)
-
-		go doSomeTask(errChan)
+		log.Printf("[R] Executing a task...")
+		go func() {
+			errChan <- doSomeTask()
+		}()
 		select {
 		case err := <-errChan:
-			switch {
-			case err == nil:
-				log.Printf("[R] Received")
-			case err.Timeout():
-				log.Printf("[R] Timed out")
-			default:
-				log.Printf("[R] Failed to receive: %v", err)
+			if err != nil {
+				log.Printf("[R] Task failed: %v", err)
+			} else {
+				log.Printf("[F] Done.")
 			}
 		case <-shutdown:
 			log.Printf("[R] Stopping; waiting for the last task...")
 			<-errChan
-			break SERVICE_LOOP
+			return
 		}
 	}
 }
 
 func forward(shutdown chan struct{}) {
-
-SERVICE_LOOP:
+	errChan := make(chan error)
 	for {
-		errChan := make(chan net.Error)
-
-		go doSomeTask(errChan)
+		log.Printf("[F] Executing a task...")
+		go func() {
+			errChan <- doSomeTask()
+		}()
 		select {
 		case err := <-errChan:
-			switch {
-			case err == nil:
-				log.Printf("[F] Forwarded")
-			case err.Timeout():
-				log.Printf("[F] Timed out")
-			default:
-				log.Printf("[F] Failed to forward: %v", err)
+			if err != nil {
+				log.Printf("[F] Task failed: %v", err)
+			} else {
+				log.Printf("[F] Done.")
 			}
 		case <-shutdown:
 			log.Printf("[F] Stopping; waiting for the last task...")
 			<-errChan
-			break SERVICE_LOOP
+			return
 		}
 	}
 }
