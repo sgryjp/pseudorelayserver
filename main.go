@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"errors"
 	"log"
 	"math/rand"
 	"os"
@@ -10,41 +10,23 @@ import (
 	"time"
 )
 
-// Conforms to net.Error
-type myError struct {
-	error
-	isTimeout bool
-}
-
-func (e *myError) Timeout() bool {
-	return e.isTimeout
-}
-
-func (e *myError) Temporary() bool {
-	return false
-}
-
-func doSomeTask() error {
-	const maximum = 2000 * time.Millisecond
-
-	n := time.Duration(rand.Intn(3000))
-	if n < maximum {
-		time.Sleep(n * time.Millisecond)
-		return nil
+// execTask sleeps for randomly determined duration.
+// It sometimes fail and returns an error.
+func execTask() error {
+	n := 500 + rand.Intn(2500)
+	time.Sleep(time.Duration(n) * time.Millisecond)
+	if (n % 9) == 0 {
+		return errors.New("bad luck")
 	}
-	time.Sleep(maximum * time.Millisecond)
-	return &myError{
-		error:     fmt.Errorf("Operation timed out"),
-		isTimeout: true,
-	}
+	return nil
 }
 
 func receive(shutdown chan struct{}) {
 	errChan := make(chan error)
-	for {
-		log.Printf("[R] Executing a task...")
+	for i := 0; ; i++ {
+		log.Printf("[R] Executing a task %d...", i)
 		go func() {
-			errChan <- doSomeTask()
+			errChan <- execTask()
 		}()
 		select {
 		case err := <-errChan:
@@ -63,10 +45,10 @@ func receive(shutdown chan struct{}) {
 
 func forward(shutdown chan struct{}) {
 	errChan := make(chan error)
-	for {
-		log.Printf("[F] Executing a task...")
+	for i := 0; ; i++ {
+		log.Printf("[F] Executing a task %d...", i)
 		go func() {
-			errChan <- doSomeTask()
+			errChan <- execTask()
 		}()
 		select {
 		case err := <-errChan:
