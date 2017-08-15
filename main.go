@@ -10,16 +10,19 @@ import (
 	"time"
 )
 
+const taskTimeout = 3 * time.Second
+
 // execTask sleeps for randomly determined duration.
 // It sometimes fail and returns an error.
-func execTask(shutdown chan struct{}) error {
+func execTask(timeout time.Duration, shutdown chan struct{}) error {
 	// Do pseudo-task. Here, it is just a "sleep".
-	n := 500 + rand.Intn(2500)
+	n := 500 + rand.Intn(3500)
 	done := time.After(time.Duration(n) * time.Millisecond)
 	select {
 	case <-shutdown:
-		// Shutdown signaled. Canceling task...
-		return errors.New("shutdown")
+		return errors.New("shutdown") // Shutdown signaled. Canceling task...
+	case <-time.After(timeout):
+		return errors.New("timed out")
 	case <-done:
 		// Do nothing here. Proceed to the following code
 	}
@@ -36,7 +39,7 @@ func receive(shutdown chan struct{}) {
 	for i := 0; ; i++ {
 		log.Printf("[R] Executing a task %d...", i)
 		go func() {
-			errChan <- execTask(shutdown)
+			errChan <- execTask(taskTimeout, shutdown)
 		}()
 		select {
 		case err := <-errChan:
@@ -58,7 +61,7 @@ func forward(shutdown chan struct{}) {
 	for i := 0; ; i++ {
 		log.Printf("[F] Executing a task %d...", i)
 		go func() {
-			errChan <- execTask(shutdown)
+			errChan <- execTask(taskTimeout, shutdown)
 		}()
 		select {
 		case err := <-errChan:
