@@ -41,8 +41,7 @@ func doSomeTask(errChan chan net.Error) {
 	}
 }
 
-func receive(wg *sync.WaitGroup, stopChan chan bool) {
-	defer wg.Done()
+func receive(stopChan chan bool) {
 
 SERVICE_LOOP:
 	for {
@@ -67,8 +66,7 @@ SERVICE_LOOP:
 	}
 }
 
-func forward(wg *sync.WaitGroup, stopChan chan bool) {
-	defer wg.Done()
+func forward(stopChan chan bool) {
 
 SERVICE_LOOP:
 	for {
@@ -107,8 +105,14 @@ func main() {
 	}()
 
 	wg.Add(2)
-	go receive(&wg, stopChan)
-	go forward(&wg, stopChan)
+	go func() {
+		defer wg.Done()
+		receive(stopChan)
+	}()
+	go func() {
+		defer wg.Done()
+		forward(stopChan)
+	}()
 	wg.Wait()
 
 	log.Printf("Exiting")
