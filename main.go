@@ -41,7 +41,7 @@ func doSomeTask(errChan chan net.Error) {
 	}
 }
 
-func receive(stopChan chan bool) {
+func receive(shutdown chan struct{}) {
 
 SERVICE_LOOP:
 	for {
@@ -58,7 +58,7 @@ SERVICE_LOOP:
 			default:
 				log.Printf("[R] Failed to receive: %v", err)
 			}
-		case <-stopChan:
+		case <-shutdown:
 			log.Printf("[R] Stopping; waiting for the last task...")
 			<-errChan
 			break SERVICE_LOOP
@@ -66,7 +66,7 @@ SERVICE_LOOP:
 	}
 }
 
-func forward(stopChan chan bool) {
+func forward(shutdown chan struct{}) {
 
 SERVICE_LOOP:
 	for {
@@ -83,7 +83,7 @@ SERVICE_LOOP:
 			default:
 				log.Printf("[F] Failed to forward: %v", err)
 			}
-		case <-stopChan:
+		case <-shutdown:
 			log.Printf("[F] Stopping; waiting for the last task...")
 			<-errChan
 			break SERVICE_LOOP
@@ -94,24 +94,27 @@ SERVICE_LOOP:
 func main() {
 	var wg sync.WaitGroup
 	sigChan := make(chan os.Signal)
-	stopChan := make(chan bool)
+	shutdown := make(chan struct{})
 
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+
+	// Broadcast shutdown event if signal received.
 	signal.Notify(sigChan, os.Interrupt, os.Kill)
 	go func() {
 		sig := <-sigChan
 		log.Printf("RECEIVED A SIGNAL: %s(%d)", sig, sig)
-		stopChan <- true
-		stopChan <- true
+		close(shutdown)
 	}()
 
+	// Start two child goroutines to execute distinct tasks.
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		receive(stopChan)
+		receive(shutdown)
 	}()
 	go func() {
 		defer wg.Done()
-		forward(stopChan)
+		forward(shutdown)
 	}()
 	wg.Wait()
 
