@@ -12,9 +12,19 @@ import (
 
 // execTask sleeps for randomly determined duration.
 // It sometimes fail and returns an error.
-func execTask() error {
+func execTask(shutdown chan struct{}) error {
+	// Do pseudo-task. Here, it is just a "sleep".
 	n := 500 + rand.Intn(2500)
-	time.Sleep(time.Duration(n) * time.Millisecond)
+	done := time.After(time.Duration(n) * time.Millisecond)
+	select {
+	case <-shutdown:
+		// Shutdown signaled. Canceling task...
+		return errors.New("shutdown")
+	case <-done:
+		// Do nothing here. Proceed to the following code
+	}
+
+	// Return result of the task. Here, failure means the random number is a multiples of 9.
 	if (n % 9) == 0 {
 		return errors.New("bad luck")
 	}
@@ -26,7 +36,7 @@ func receive(shutdown chan struct{}) {
 	for i := 0; ; i++ {
 		log.Printf("[R] Executing a task %d...", i)
 		go func() {
-			errChan <- execTask()
+			errChan <- execTask(shutdown)
 		}()
 		select {
 		case err := <-errChan:
@@ -48,7 +58,7 @@ func forward(shutdown chan struct{}) {
 	for i := 0; ; i++ {
 		log.Printf("[F] Executing a task %d...", i)
 		go func() {
-			errChan <- execTask()
+			errChan <- execTask(shutdown)
 		}()
 		select {
 		case err := <-errChan:
