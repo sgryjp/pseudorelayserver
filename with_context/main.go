@@ -18,11 +18,13 @@ const taskTimeout = 3 * time.Second
 func execTask(ctx context.Context) error {
 	// Do pseudo-task. Here, it is just a "sleep".
 	n := 500 + rand.Intn(3500)
-	done := time.After(time.Duration(n) * time.Millisecond)
+	timer := time.NewTimer(time.Duration(n) * time.Millisecond)
 	select {
 	case <-ctx.Done():
+		// Cancel the pseudo-task here.
+		timer.Stop()
 		return ctx.Err()
-	case <-done:
+	case <-timer.C:
 		// Do nothing here. Proceed to the following code
 	}
 
@@ -45,12 +47,15 @@ func receiver(ctx context.Context) {
 		}()
 		select {
 		case err := <-errChan:
-			if err != nil {
+			switch err {
+			default:
 				log.Printf("[R] Task failed: %v", err)
-				if err == ctx.Err() {
-					return
-				}
-			} else {
+			case context.DeadlineExceeded:
+				log.Printf("[R] Task timed out")
+			case context.Canceled:
+				log.Printf("[R] Task canceled")
+				return
+			case nil:
 				log.Printf("[R] Task succeeded.")
 			}
 			// We should not receive from ctx.Done() here. If ctx was
@@ -71,12 +76,15 @@ func forwarder(ctx context.Context) {
 		}()
 		select {
 		case err := <-errChan:
-			if err != nil {
+			switch err {
+			default:
 				log.Printf("[F] Task failed: %v", err)
-				if err == ctx.Err() {
-					return
-				}
-			} else {
+			case context.DeadlineExceeded:
+				log.Printf("[F] Task timed out")
+			case context.Canceled:
+				log.Printf("[F] Task canceled")
+				return
+			case nil:
 				log.Printf("[F] Task succeeded.")
 			}
 			// We should not receive from ctx.Done() here. If ctx was

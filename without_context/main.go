@@ -12,6 +12,9 @@ import (
 
 const taskTimeout = 3 * time.Second
 
+var errShutdown = errors.New("shutdown")
+var errTimeout = errors.New("timed out")
+
 // execTask sleeps for randomly determined duration.
 // It sometimes fail and returns an error.
 func execTask(timeout time.Duration, shutdown chan struct{}) error {
@@ -20,21 +23,22 @@ func execTask(timeout time.Duration, shutdown chan struct{}) error {
 	done := time.After(time.Duration(n) * time.Millisecond)
 	select {
 	case <-shutdown:
-		return errors.New("shutdown") // Shutdown signaled. Canceling task...
+		return errShutdown
 	case <-time.After(timeout):
-		return errors.New("timed out")
+		return errTimeout
 	case <-done:
 		// Do nothing here. Proceed to the following code
 	}
 
-	// Return result of the task. Here, failure means the random number is a multiples of 9.
+	// Return result of the task. Here, failure means the random number is a
+	// multiples of 9.
 	if (n % 9) == 0 {
 		return errors.New("bad luck")
 	}
 	return nil
 }
 
-func receive(shutdown chan struct{}) {
+func receiver(shutdown chan struct{}) {
 	errChan := make(chan error)
 	for i := 0; ; i++ {
 		log.Printf("[R] Executing a task %d...", i)
@@ -43,20 +47,25 @@ func receive(shutdown chan struct{}) {
 		}()
 		select {
 		case err := <-errChan:
-			if err != nil {
+			switch err {
+			default:
 				log.Printf("[R] Task failed: %v", err)
-			} else {
-				log.Printf("[R] Done.")
+			case errTimeout:
+				log.Printf("[R] Task timed out")
+			case errShutdown:
+				log.Printf("[R] Task canceled")
+				return
+			case nil:
+				log.Printf("[R] Task succeeded.")
 			}
-		case <-shutdown:
-			log.Printf("[R] Stopping; waiting for the last task...")
-			<-errChan
-			return
+			// We should not receive from ctx.Done() here. If ctx was
+			// canceled, it's child context is also canceled so the execTask()
+			// should finish in no time.
 		}
 	}
 }
 
-func forward(shutdown chan struct{}) {
+func forwarder(shutdown chan struct{}) {
 	errChan := make(chan error)
 	for i := 0; ; i++ {
 		log.Printf("[F] Executing a task %d...", i)
@@ -65,15 +74,20 @@ func forward(shutdown chan struct{}) {
 		}()
 		select {
 		case err := <-errChan:
-			if err != nil {
+			switch err {
+			default:
 				log.Printf("[F] Task failed: %v", err)
-			} else {
-				log.Printf("[F] Done.")
+			case errTimeout:
+				log.Printf("[F] Task timed out")
+			case errShutdown:
+				log.Printf("[F] Task canceled")
+				return
+			case nil:
+				log.Printf("[F] Task succeeded.")
 			}
-		case <-shutdown:
-			log.Printf("[F] Stopping; waiting for the last task...")
-			<-errChan
-			return
+			// We should not receive from ctx.Done() here. If ctx was
+			// canceled, it's child context is also canceled so the execTask()
+			// should finish in no time.
 		}
 	}
 }
@@ -97,13 +111,13 @@ func main() {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		receive(shutdown)
+		receiver(shutdown)
 	}()
 	go func() {
 		defer wg.Done()
-		forward(shutdown)
+		forwarder(shutdown)
 	}()
-	wg.Wait()
+	wg.Wait() // Wait for end of both children
 
 	log.Printf("Exiting")
 }
